@@ -1,13 +1,24 @@
 ---
-title: "Taxonomic profiling of bacterial and archaeal communities from saliva, stool, and CapScan-sampled gut metagenomes"
+title: "<br> Taxonomic profiling of bacterial and archaeal communities from saliva, stool, and CapScan-sampled gut metagenomes"
 output:
   html_document:
     df_print: paged
+    toc: true
+    toc_float: true
   html_notebook: default
   pdf_document: default
 ---
 
 ---
+
+<style>
+div.highlight {
+background-color: #F2F2F2;
+padding: 0px;
+border-radius: 2px;
+}
+
+</style>
 
 ### <b><i>Subject: TS</b></i>
 
@@ -202,7 +213,9 @@ for(phy in phy_color$Phylum) {
 col_palette <- col_palette %>% arrange(factor(Tax_label, levels = gen_order))
 ```
 
+<div class="highlight">
 ### 1.1 Overview of microbial community composition
+</div>
 
 Figure 1 is an interactive figure showing the microbial community composition in each collected sample. Here, each color and shade corresponds to a different genus. For reference, domestic dogs (*Canis familiaris*) and gray wolves (*Canis lupus*) are different species that belong to the same genus (*Canis*).
 <br><br>
@@ -287,7 +300,9 @@ data[sapply(data, is.infinite)] <- NA
 ```
 <br><br>
 
+<div class="highlight">
 ### 1.2 High-resolution snapshot of community composition
+</div>
 Figure 2 is an interactive figure showing the microbial community composition at higher taxononomic resolution. Here, each row corresponds to a unique microbe.
 <br><br>
 You can interact with this figure by:
@@ -351,8 +366,9 @@ pHeat
 
 <br><br>
 
-
+<div class="highlight">
 ### 1.3 Notable microbes detected
+</div>
 
 * *Raoultella ornithinolytica*:
   * Previously identified strains produce histamine from histidine (an amino acid) (Kanki *et al*., 2002), which can trigger an inflammatory response by the immune system
@@ -364,8 +380,9 @@ pHeat
   
 <br><br>
 
-
+<div class="highlight">
 ### 1.4 References
+</div>
 
 Kanki, M., Yoda, T., Tsukamoto, T., and Shibata, T. (2002) *Klebsiella pneumoniae* produces no histamine: *Raoultella planticola* and *Raoultella omithinolytica* strains are histamine producers. *Appl Environ Microbiol* 68: 3462–3466.
 <br><br>
