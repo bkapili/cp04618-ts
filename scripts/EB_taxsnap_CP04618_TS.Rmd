@@ -1,0 +1,372 @@
+---
+title: "Taxonomic profiling of bacterial and archaeal communities from saliva, stool, and CapScan-sampled gut metagenomes"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+---
+
+### <b><i>Subject: TS</b></i>
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r add logo, echo = FALSE}
+logo_path <- "../logo/envivo.svg"
+
+htmltools::img(src = knitr::image_uri(logo_path), 
+               alt = "logo", 
+               style = "position:absolute; top:0; right:0; padding:10px; width: 145px; height: 42px")
+```
+
+```{r load packages, include = FALSE}
+# List required packages
+cranPackages <- c("BiocManager", "ggplot2", "dplyr", "tidyr",
+                  "ape", "ggplot2", "reshape2", "plotly", "heatmaply")
+biocPackages <- c("phyloseq", "Biostrings")
+
+# Install missing CRAN packages
+installedCRAN <- cranPackages %in% rownames(installed.packages())
+if (any(installedCRAN == FALSE)) {
+  install.packages(cranPackages[!installedCRAN],
+                   repos = 'http://cran.us.r-project.org')
+}
+
+# Install missing Bioconductor packages
+installedBioc <- biocPackages %in% rownames(installed.packages())
+if (any(installedBioc == FALSE)) {
+  BiocManager::install(biocPackages[!installedBioc])
+}
+
+# Load packages
+lapply(c(cranPackages, biocPackages), library, character.only = TRUE)
+```
+
+```{r load data, include = FALSE}
+# Load CosmosID data and formatted metadata
+cosmos <- read.csv(file = "../data/CP04618_cosmosid_20220906.csv")
+meta <- read.csv(file = "../data/CP04618_metadata.csv")
+```
+
+```{r format data, include = FALSE}
+# Prepare tax_table and otu_table objects
+tax <- cosmos %>%
+  select(Phylum, Class, Order, Family, Genus, Species, Strain) %>%
+  as.matrix %>%
+  tax_table
+
+start_ind <- grep("Strain", colnames(cosmos))+1
+stop_ind <- ncol(cosmos)-2
+abundance_scores <- cosmos[,start_ind:stop_ind] %>% otu_table(., taxa_are_rows = TRUE)
+
+# Reformat sample names and metadata sample names so they match
+colnames(abundance_scores) <- colnames(abundance_scores) %>%
+  gsub("X", "", .) %>%
+  gsub("_.*", "", .) %>%
+  paste0("EB_", .)
+
+row.names(meta) <- meta %>%
+  pull(Sample_number) %>%
+  paste0("EB_", .)
+
+sam_data <- sample_data(meta)
+```
+
+```{r build phyloseq, include = FALSE}
+# Build phyloseq object
+ps <- phyloseq(tax, abundance_scores, sam_data)
+```
+
+```{r transform data, include = FALSE}
+# Log transform
+psLog <- ps %>% transform_sample_counts(., function(x) log(x + 1, base = 10))
+
+# Relative abundance transform
+psRA <- ps %>% transform_sample_counts(., function(x) x/sum(x)*100)
+```
+
+```{r rank phyla, include = FALSE}
+phy_rank <- psRA %>%
+  tax_glom(., taxrank = "Phylum") %>%
+  psmelt %>%
+  group_by(Phylum) %>%
+  summarise(median = median(Abundance))
+
+phy_rank %>% arrange(desc(median))
+```
+
+```{r subject subset, include = FALSE}
+# Set subject
+subject <- "TS"
+
+# Subset to subject samples and drop missing taxa
+psSub <- subset_samples(ps, Subject == subject) %>%
+  prune_taxa(taxa_sums(.) > 0, .)
+
+# Add plot label for each sample
+sample_data(psSub)$Plot_label <- paste0(sample_names(psSub), " (", sample_data(psSub)$Sample_type, ")")
+
+# Relative abundance transform
+psSub_ra <- psSub %>% transform_sample_counts(., function(x) x/sum(x)*100)
+```
+
+```{r plot bar, include = FALSE}
+# Define NOT IN operator
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+# Agglomerate at Genus and melt
+taxrank <- "Genus"
+melt <- psSub_ra %>% tax_glom(., taxrank = taxrank) %>% psmelt
+
+# Define major phyla
+major_phy <- c("Firmicutes", "Actinobacteria", "Bacteroidetes", "Proteobacteria")
+
+# Identify genera present in <1% relative abundance in all samples
+rare_genera <- melt %>%
+  group_by(Sample_number, Genus) %>%
+  summarize(sum = sum(Abundance)) %>%
+  ungroup() %>%
+  group_by(Genus) %>%
+  summarize(max = max(sum)) %>%
+  filter(max < 1) %>%
+  pull(Genus)
+
+# Create new column containing name of genus if above cutoff or "Other genera" if not
+df <- melt %>%
+  mutate(Phy_group = case_when(Phylum %!in% major_phy ~ "Other phylum",
+                               TRUE ~ Phylum),
+         Phy_group = case_when(Genus %in% rare_genera ~ "Other phylum",
+                               TRUE ~ Phy_group),
+         Tax_label = case_when(Genus %in% rare_genera ~ "AaOther genera",
+                               TRUE ~ Genus)) %>%
+  group_by(Subject) %>%
+  arrange(Subject, Sample_type)
+
+# Define order
+phy_order <- c("Other phylum",
+               "Proteobacteria",
+               "Bacteroidetes",
+               "Actinobacteria",
+               "Firmicutes") %>% rev
+
+gen_order <- df %>%
+  select(Phy_group, Tax_label) %>%
+  mutate(Order = match(Phy_group, phy_order)) %>%
+  arrange(Order, desc(Tax_label)) %>%
+  distinct %>%
+  pull(Tax_label)
+
+gen_order <- factor(gsub("^Aa", "", gen_order), levels = gsub("^Aa", "", gen_order)) # the Aa is to make sure "Other" is plotted at the top
+
+df <- df %>%
+  mutate(Tax_label = factor(gsub("^Aa", "", Tax_label), levels = gen_order))
+
+# Define colors
+phy_color <- data.frame(Phylum = c("Actinobacteria",
+                                   "Other phylum",
+                                   "Bacteroidetes",
+                                   "Firmicutes",
+                                   "Proteobacteria"),
+                        Base_color = c("#FFB724",
+                                       "#832CFF",
+                                       "#64C62A",
+                                       "#072AC8",
+                                       "#E93B4F"))
+
+phy_color <- phy_color[match(phy_order, phy_color$Phylum),]
+
+# Data frame as input, data frame with new column of hex codes as output
+col_palette <- df %>%
+  select(Phy_group, Tax_label) %>%
+  distinct %>%
+  mutate(Hex_code = NA)
+
+
+for(phy in phy_color$Phylum) {
+  test <- col_palette %>%
+    filter(Phy_group == phy) %>%
+    pull(Tax_label) %>%
+    droplevels %>%
+    levels
+  
+  tax.color <- colorRampPalette(c(phy_color$Base_color[match(phy, phy_color$Phylum)], "white"))
+  coltest <- tax.color(length(test)+2) %>%
+    .[-length(.)]
+  col_palette$Hex_code[match(test, col_palette$Tax_label)] <- coltest
+}
+
+col_palette <- col_palette %>% arrange(factor(Tax_label, levels = gen_order))
+```
+
+### 1.1 Overview of microbial community composition
+
+Figure 1 is an interactive figure showing the microbial community composition in each collected sample. Here, each color and shade corresponds to a different genus. For reference, domestic dogs (*Canis familiaris*) and gray wolves (*Canis lupus*) are different species that belong to the same genus (*Canis*).
+<br><br>
+You can interact with this figure by:
+
+* Hovering the cursor over a color in the stacked bar to see the taxonomic identity, sample type, and relative abundance corresponding to that color and bar
+* Clicking and dragging the cursor over a portion of the figure to zoom
+* Single-clicking a genus's name in the legend to remove that genus from the figure
+* Double-clicking a genus's name in the legend to only show that genus
+```{r, out.width = "100%", echo = FALSE}
+# Plot
+pBar <- plot_ly(df, x = ~Plot_label, y = ~Abundance, type = "bar",
+             color = ~Tax_label, colors = col_palette$Hex_code,
+             textposition = "none",
+             text = ~paste("<b>Genus:</b>", Tax_label,
+                           "<br><br>", "<b>Sample type:</b>", Sample_type,
+                           "<br>", "<b>Relative abundance:</b>", paste0(round(Abundance, digits = 1), "%")),
+             hoverinfo = "text") %>%
+  layout(xaxis = list(title = "<b>Sample</b>",
+                      ticks = "outside"),
+         yaxis = list(title = "<b>Relative abundance (%)</b>",
+                      ticks = "outside"),
+         barmode = "stack",
+         font = list(family = "Arial"))
+
+pBar$x$layout$yaxis$linecolor <- "#000000"
+pBar
+```
+**Figure 1:** Microbial community composition of collected saliva, stool, and CapScan samples. CapScan samples are ordered from proximal to distal intestine (*i*.*e*., increasing distance from mouth). Taxonomic composition is reported at the genus rank. Genera present at <1% relative abundance across all samples are reported as "Other genera". <u>Note:</u> Blue = *Firmicutes*; Yellow = *Actinomycetes*; Green = *Bacteroidetes*; Red = *Proteobacteria*; Purple = all other phyla. Shades of the same color (except purple) correspond to different genera from the same phylum.
+
+```{r, include = FALSE}
+# Ordination-based
+pHeat_ord <- plot_heatmap(psSub_ra, method = "NMDS", distance = "bray",
+                          taxa.label = "Strain",
+                          max.label = 300)
+
+# Retrieve row and taxon orders
+row_order <- pHeat_ord$plot_env$taxa.order %>% rev
+tax_order <- tax_table(psSub_ra)[match(row_order, rownames(tax_table(psSub_ra))),] %>%
+  as.data.frame %>%
+  mutate(taxon = rownames(.),
+         Abundance = 1,
+         Sample = subject)
+```
+
+```{r, include = FALSE}
+# Prepare data
+x <- psSub_ra %>% otu_table %>% as.data.frame
+colnames(x) <- lapply(colnames(x), grep, sample_data(psSub_ra)$Plot_label, value = TRUE) %>% unlist
+
+# Add taxonomy
+x <- cbind(x, tax_table(psSub_ra))
+
+# Reorder rows and columns to match ordination
+x <- x[match(row_order, rownames(x)),]
+
+# Set hovertext
+nsamp <- nsamples(psSub_ra)
+hover_strain <- x[, 1:nsamp]
+hover_strain[] <- paste0("<b>Microbe:</b> ", x$Strain, "\n",
+                         "<b>Relative abundance:</b> ")
+hover_strain <- as.matrix(hover_strain)
+
+hover_abund <- x[, 1:nsamp] %>% round(., digits = 2) %>% as.data.frame
+hover_abund <- apply(hover_abund, 2, paste0, "%")
+hover_abund <- as.matrix(hover_abund)
+
+hover_tax <- x[, 1:nsamp]
+hover_tax[] <- paste0("\n \n<b>Phylum:</b> ", x$Phylum, "\n",
+                   "<b>Class:</b> ", x$Class, "\n",
+                   "<b>Order:</b> ", x$Order, "\n",
+                   "<b>Family:</b> ", x$Family, "\n",
+                   "<b>Genus:</b> ", x$Genus, "\n")
+hover_tax <- as.matrix(hover_tax)
+
+hovertext <- matrix(paste0(hover_strain, hover_abund, hover_tax),
+                nrow = nrow(hover_tax), ncol = ncol(hover_tax))
+
+# Perform log10 transformation on relative abundances
+data <- log(x[, 1:nsamp], base = 10)
+data[sapply(data, is.infinite)] <- NA
+```
+<br><br>
+
+### 1.2 High-resolution snapshot of community composition
+Figure 2 is an interactive figure showing the microbial community composition at higher taxononomic resolution. Here, each row corresponds to a unique microbe.
+<br><br>
+You can interact with this figure by:
+
+* Hovering the cursor over a cell to see that microbe's genus and species (and strain when available), relative abundance, and full taxonomic classification
+* Clicking and dragging the cursor over a portion of the figure to zoom
+
+<br><br>
+```{r, out.height = "750px", echo = FALSE}
+# Set sample names
+#colnames(data) <- c("EB_269 (saliva)", "EB_270 (CapScan)", "EB_271 (CapScan)",
+#                    "EB_272 (CapScan)", "EB_273 (CapScan)", "EB_274 (stool)")
+
+# Prepare taxonomy row side
+row_side <- x %>% select(Phylum)
+row_side$Phylum[row_side$Phylum %!in% major_phy] <- "Other phyla"
+row_side$Phylum <- factor(row_side$Phylum, levels = c("Other phyla",
+                                                      "Proteobacteria",
+                                                      "Bacteroidetes",
+                                                      "Actinobacteria",
+                                                      "Firmicutes"))
+
+# Plot
+pHeat <- heatmaply(data,
+                   Rowv = FALSE,
+                   Colv = FALSE,
+                   colors = viridis::viridis(10),
+                   row_side_colors = row_side,
+                   row_side_palette = c("Actinobacteria" = "#FFB724",
+                                        "Bacteroidetes" = "#64C62A",
+                                        "Firmicutes" = "#072AC8",
+                                        "Proteobacteria" = "#E93B4F",
+                                        "Other phyla" = "#832CFF"),
+                   subplot_margin = 0.01,
+                   subplot_widths = c(0.9, 0.07),
+                   side_color_colorbar_len = 0.3,
+                   plot_method = "plotly",
+                   custom_hovertext = hovertext,
+                   xlab = "<b>Sample</b>",
+                   ylab = "<b>Microbe</b>",
+                   colorbar_xpos = 1.019,
+                   colorbar_ypos = 0.5,
+                   colorbar_len = 0.3) %>%
+  layout(xaxis = list(showgrid = FALSE),
+         yaxis = list(showgrid = FALSE,
+                      showticklabels = FALSE),
+         font = list(family = "Arial")) %>%
+  colorbar(title = "Relative abundance",
+           tickvals = c(-1, 0, 1),
+           ticktext = c("0.1%", "1%", "10%"))
+
+# Format row side
+pHeat$x$layout$xaxis2$ticktext <- "Phylum"
+pHeat$x$layout$xaxis$linecolor <- "#000000"
+pHeat$x$layout$xaxis2$linecolor <- "#000000"
+pHeat$x$layout$yaxis$linecolor <- "#000000"
+pHeat$x$layout$legend$yanchor <- "bottom"
+pHeat
+```
+**Figure 2:** Heat map showing relative abundance of microbes in each sample (N = 266 total identified). Each row corresponds to a unique microbe and each column corresponds to an individual sample. Note the relative abundance colorscale is in log units.
+
+<br><br>
+
+
+### 1.3 Notable microbes detected
+
+* *Raoultella ornithinolytica*:
+  * Previously identified strains produce histamine from histidine (an amino acid) (Kanki *et al*., 2002), which can trigger an inflammatory response by the immune system
+  * Found in high relative abundance in proximal CapScan samples (~15-25%)
+<br><br>
+* *Klebsiella pneumoniae*:
+  * A known cause of pneumonia by inducing inflammation upon colonization of the lungs; growing interest in the connection between *Klebsiella pneumoniae* and inflammatory bowel diseases (reviewed in Kaur *et al*., 2018)
+  * Detected in CapScan samples (~2% relative abundance) but not stool
+  
+<br><br>
+
+
+### 1.4 References
+
+Kanki, M., Yoda, T., Tsukamoto, T., and Shibata, T. (2002) *Klebsiella pneumoniae* produces no histamine: *Raoultella planticola* and *Raoultella omithinolytica* strains are histamine producers. *Appl Environ Microbiol* 68: 3462–3466.
+<br><br>
+Kaur, C.P., Vadivelu, J., and Chandramathi, S. (2018) Impact of *Klebsiella pneumoniae* in lower gastrointestinal tract diseases. *J Dig Dis* 19: 262–271.
