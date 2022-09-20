@@ -21,6 +21,7 @@ border-radius: 2px;
 </style>
 
 ### <b><i>Subject: TS</b></i>
+*Envivo Bio, Inc.; Confidential*
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -224,7 +225,7 @@ You can interact with this figure by:
 * Hovering the cursor over a color in the stacked bar to see the taxonomic identity, sample type, and relative abundance corresponding to that color and bar
 * Clicking and dragging the cursor over a portion of the figure to zoom
 * Single-clicking a genus's name in the legend to remove that genus from the figure
-* Double-clicking a genus's name in the legend to only show that genus
+* Double-clicking (<u>very quickly</u>) a genus's name in the legend to only show that genus
 ```{r, out.width = "100%", echo = FALSE}
 # Plot
 pBar <- plot_ly(df, x = ~Plot_label, y = ~Abundance, type = "bar",
@@ -384,6 +385,6 @@ pHeat
 ### 1.4 References
 </div>
 
-Kanki, M., Yoda, T., Tsukamoto, T., and Shibata, T. (2002) *Klebsiella pneumoniae* produces no histamine: *Raoultella planticola* and *Raoultella omithinolytica* strains are histamine producers. *Appl Environ Microbiol* 68: 3462–3466.
+Kanki, M., Yoda, T., Tsukamoto, T., and Shibata, T. (2002) *Klebsiella pneumoniae* produces no histamine: *Raoultella planticola* and *Raoultella omithinolytica* strains are histamine producers. *Appl Environ Microbiol* **68:** 3462–3466.
 <br><br>
-Kaur, C.P., Vadivelu, J., and Chandramathi, S. (2018) Impact of *Klebsiella pneumoniae* in lower gastrointestinal tract diseases. *J Dig Dis* 19: 262–271.
+Kaur, C.P., Vadivelu, J., and Chandramathi, S. (2018) Impact of *Klebsiella pneumoniae* in lower gastrointestinal tract diseases. *J Dig Dis* **19:** 262–271.
